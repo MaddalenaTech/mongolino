@@ -58,7 +58,7 @@ namespace Mongolino
             MongoCollection.Indexes.CreateOne(Builders<T>.IndexKeys.Descending(func));
         }
 
-        public static IEnumerable<T> Text(string text)
+        public static IEnumerable<T> FullTextSearch(string text)
         {
             var filter = Builders<T>.Filter.Text(text);
             var res = MongoCollection.Find(filter);
@@ -77,6 +77,11 @@ namespace Mongolino
 
                 return res.Skip(rnd.Next((int)res.Count() - 1)).FirstOrDefault();
             }
+        }
+
+        public static IEnumerable<T> TakeRandom(int v)
+        {
+            for (int i = 0; i < v; i++) yield return Random;
         }
 
         public static IEnumerable<T> All => MongoCollection.Find(Builders<T>.Filter.Empty).ToEnumerable();
@@ -98,30 +103,17 @@ namespace Mongolino
             return res.ToEnumerable();
         }
 
-        public static bool Any<K>(Expression<Func<T,K>> sel, K value)
-        {
-            var filter = Builders<T>.Filter.Eq(sel,value);
-            var res = MongoCollection.Find(filter);
-            return res.Any();
-        }
+        public static bool Any(Expression<Func<T, bool>> p) => MongoCollection.Find(p).Any();
 
-        public static async Task<bool> AnyAsync<K>(Expression<Func<T, K>> sel, K value)
+        public static async Task<bool> AnyAsync(Expression<Func<T, bool>> p)
         {
-            var filter = Builders<T>.Filter.Eq(sel, value);
-            var res = await MongoCollection.FindAsync(filter);
+            var res = await MongoCollection.FindAsync(p);
             return await res.AnyAsync();
         }
 
-        public static long Count()
-        {
-            return MongoCollection.Count(Builders<T>.Filter.Empty);
-        }
+        public static long Count() => MongoCollection.Count(Builders<T>.Filter.Empty);
 
-        public static long Count<K>(Expression<Func<T, K>> sel, K value)
-        {
-            var filter = Builders<T>.Filter.Eq(sel, value);
-            return MongoCollection.Count(filter);
-        }
+        public static long Count(Expression<Func<T, bool>> sel) => MongoCollection.Count(sel);
 
         public static void Add(T obj)
         {
@@ -206,9 +198,10 @@ namespace Mongolino
             await MongoCollection.UpdateOneAsync(filter, update);
         }
 
-        public static void Delete<K>(Expression<Func<T, K>> p, K value)
+        public static void Delete(string id)
         {
-            MongoCollection.DeleteOne(Builders<T>.Filter.Eq(p, value));
+            var objId = ObjectId.Parse(id);
+            MongoCollection.DeleteOne(Builders<T>.Filter.Eq(x => x._id, objId));
         }
 
         public static void Delete(T obj)
@@ -221,19 +214,30 @@ namespace Mongolino
             MongoCollection.DeleteMany(Builders<T>.Filter.In(x => x._id, obj.Select(x=>x._id)));
         }
 
-        public static void DeleteAsync(T obj)
+        public static void Delete(Expression<Func<T, bool>> p)
         {
-            MongoCollection.DeleteOneAsync(Builders<T>.Filter.Eq(x => x._id, obj._id));
+            MongoCollection.DeleteMany(p);
         }
 
-        public static void DeleteAsync(IEnumerable<T> obj)
+        public static async void DeleteAsync(T obj)
         {
-            MongoCollection.DeleteManyAsync(Builders<T>.Filter.In(x => x._id, obj.Select(x => x._id)));
+            await MongoCollection.DeleteOneAsync(Builders<T>.Filter.Eq(x => x._id, obj._id));
         }
 
-        public static T GetOrCreate<K>(Expression<Func<T,K>> sel, K p, T obj)
+        public static async void DeleteAsync(string id)
         {
-            var f = FirstOrDefault(sel,p);
+            var objId = ObjectId.Parse(id);
+            await MongoCollection.DeleteOneAsync(Builders<T>.Filter.Eq(x => x._id, objId));
+        }
+
+        public static async void DeleteAsync(IEnumerable<T> obj)
+        {
+            await MongoCollection.DeleteManyAsync(Builders<T>.Filter.In(x => x._id, obj.Select(x => x._id)));
+        }
+
+        public static T GetOrCreate(Expression<Func<T, bool>> p, T obj)
+        {
+            var f = FirstOrDefault(p);
 
             return f == default(T) ?  Create(obj) : f;
         }
@@ -245,43 +249,17 @@ namespace Mongolino
             return MongoCollection.Find(filter).FirstOrDefault();
         }
 
-        public static T FirstOrDefault()
-        {
-            var res = MongoCollection.Find(Builders<T>.Filter.Empty);
-            return res.FirstOrDefault();
-        }
+        public static T FirstOrDefault() => MongoCollection.Find(Builders<T>.Filter.Empty).FirstOrDefault();
 
-        public static T FirstOrDefault<K>(Expression<Func<T, K>> sel, K p)
-        {
-            var filter = Builders<T>.Filter.Eq(sel, p);
-            var res = MongoCollection.Find(filter);
-            return res.FirstOrDefault();
-        }
+        public static T FirstOrDefault(Expression<Func<T, bool>> p) => MongoCollection.Find(p).FirstOrDefault();
 
-        public static async Task<T> FirstOrDefaultAsync<K>(Expression<Func<T, K>> sel, K p)
-        {
-            var filter = Builders<T>.Filter.Eq(sel, p);
-            var res = await MongoCollection.FindAsync(filter);
-            return await res.FirstOrDefaultAsync();
-        }
+        public static async Task<T> FirstOrDefaultAsync(Expression<Func<T, bool>> p) => await (await MongoCollection.FindAsync(p)).FirstOrDefaultAsync();
 
-        public static T First<K>(Expression<Func<T, K>> sel, K p)
-        {
-            var filter = Builders<T>.Filter.Eq(sel, p);
-            return MongoCollection.Find(filter).FirstOrDefault();
-        }
+        public static T First(Expression<Func<T, bool>> p) => MongoCollection.Find(p).FirstOrDefault();
 
-        public static IEnumerable<T> Where<K>(Expression<Func<T, K>> sel, K p)
-        {
-            var filter = Builders<T>.Filter.Eq(sel, p);
-            return MongoCollection.Find(filter).ToEnumerable();
-        }
+        public static IEnumerable<T> Where(Expression<Func<T, bool>> p) => MongoCollection.Find(p).ToEnumerable();
 
-        public static IEnumerable<T> Search(string search)
-        {
-            var filter = Builders<T>.Filter.Text(search);
-            return MongoCollection.Find(filter).ToEnumerable();
-        }
+        public static IEnumerable<T> Search(string search) => MongoCollection.Find(Builders<T>.Filter.Text(search)).ToEnumerable();
 
         public static int Sum(Func<T,int> sum) => MongoCollection.Find(Builders<T>.Filter.Empty).ToEnumerable().Sum(sum);
 
